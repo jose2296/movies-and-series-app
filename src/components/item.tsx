@@ -37,7 +37,7 @@ const Item = ({ title, poster, checked, released, type, addItemToList, toggleSee
                                 </svg>
                             </button>
                         </summary>
-                        <ul className='absolute right-0 dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-52'>
+                        <ul className='absolute right-0 dropdown-content z-[1] menu p-2 shadow bg-base-200 rounded-box w-52'>
                             {!!addItemToList && <li><button role='button' onClick={() => handleMenuClicked(addItemToList)}>Añadir a la lista</button></li>}
                             {!!toggleSeen && <li><button onClick={() => handleMenuClicked(toggleSeen)}>Marcar como {checked ? 'no vista' : 'vista'}</button></li>}
                             {!!getProviders && <li><button onClick={() => handleMenuClicked(getProviders)}>Ver proveedores</button></li>}
