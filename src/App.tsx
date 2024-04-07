@@ -2,6 +2,9 @@
 import { initializeApp } from 'firebase/app';
 import { child, getDatabase, onValue, ref, remove, set } from 'firebase/database';
 import { useEffect, useState } from 'react';
+import { toast } from 'sonner';
+import List from './components/list';
+import { getMovieProviders, getPopularItems, searchItem } from './services/themoviedb';
 
 // TODO: Add SDKs for Firebase products that you want to use
 // https://firebase.google.com/docs/web/setup#available-libraries
@@ -10,8 +13,7 @@ import { useEffect, useState } from 'react';
 const firebaseConfig = {
     apiKey: 'AIzaSyDBINVo16FMd_AfWBg0EnaFRAc5mjzAE_g',
     authDomain: 'lists-fa5ab.firebaseapp.com',
-    databaseURL:
-    'https://lists-fa5ab-default-rtdb.europe-west1.firebasedatabase.app',
+    databaseURL: 'https://lists-fa5ab-default-rtdb.europe-west1.firebasedatabase.app',
     projectId: 'lists-fa5ab',
     storageBucket: 'lists-fa5ab.appspot.com',
     messagingSenderId: '262332809341',
@@ -23,13 +25,10 @@ initializeApp(firebaseConfig);
 
 const dbRef = ref(getDatabase());
 
-const APIKEY = 'aad5022409e17987784fbb6f1e0d6ccb';
-
-type Item = {
+export type Item = {
     themoviedbId: number,
     title: string;
     checked: boolean;
-    imdbID: string;
     poster: string;
     type: 'movies' | 'series';
     released: string;
@@ -53,100 +52,14 @@ export interface ThemoviedbItem {
     vote_average: number
     vote_count: number
     origin_country: string[]
-  }
-
-
-type Tab = 'movies' | 'series' | 'popular';
-
-export interface OmdbapiItem {
-    Title: string
-    Year: string
-    Rated: string
-    Released: string
-    Runtime: string
-    Genre: string
-    Director: string
-    Writer: string
-    Actors: string
-    Plot: string
-    Language: string
-    Country: string
-    Awards: string
-    Poster: string
-    Ratings: Rating[]
-    Metascore: string
-    imdbRating: string
-    imdbVotes: string
-    imdbID: string
-    Type: string
-    totalSeasons: string
-    Response: string
 }
+
+type Tab = 'movies' | 'series' | 'popular' | 'search';
 
 export interface Rating {
     Source: string
     Value: string
 }
-const parseItemsFromApi = (data: ThemoviedbItem[]) => {
-    const _items = data.map(item => ({
-        themoviedbId: item.id,
-        title: item.title || item.name,
-        poster: item.poster_path ? `https://image.tmdb.org/t/p/original${item.poster_path}` : 'item-placeholder.png',
-        released: item.release_date || item.first_air_date,
-        type: item.media_type === 'tv' ? 'series' : (item.media_type === 'movie' ? 'movies' : ''),
-        checked: false
-    } as Item)).filter(item => !!item.type);
-
-    return _items;
-};
-
-type ItemProps = Item & {
-    addItemToList?: () => void
-    toggleSeen?: () => void
-    deleteFromList?: () => void
-}
-
-const Item = ({ title, poster, checked, released, type, addItemToList, toggleSeen, deleteFromList }: ItemProps) => (
-    <div className='flex flex-col items-center gap-4 snap-center'>
-        <header className='pl-4 flex items-center justify-between max-w-[300px] w-[300px]'>
-            <p className='text-xl w-full text-center font-bold truncate'>{title}</p>
-            <div className='dropdown dropdown-end'>
-                <div tabIndex={0} role='button' className='pl-2'>
-                    <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='#ffffff' className='w-4 h-4'>
-                        <path d='M9.5 13a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0zm0-5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0zm0-5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0z'/>
-                    </svg>
-                </div>
-                <ul tabIndex={0} className='dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-52'>
-                    {!!addItemToList && <li><a onClick={addItemToList}>Añadir a la lista</a></li>}
-                    {!!toggleSeen && <li><a onClick={toggleSeen}>Marcar como {checked ? 'no vista' : 'vista'}</a></li>}
-                    {!!deleteFromList && <li><a onClick={deleteFromList}>Borrar de la lista</a></li>}
-                </ul>
-            </div>
-        </header>
-        <img className='w-[300px] h-[500px] max-w-[300px] max-h-[500px] rounded-box' src={poster} alt={title} />
-        <div className={`flex ${type ? 'justify-between' : 'justify-center'}  w-full px-2`}>
-            <p>{released}</p>
-            {!!type &&
-                <p>{type === 'series' ? 'Serie' : 'Película'}</p>
-            }
-        </div>
-    </div>
-);
-
-const List = ({ items, addItemToList, toggleSeen, deleteFromList }: { items: Item[]; addItemToList?: (item: Item) => void; toggleSeen?: (item: Item) => void; deleteFromList?: (item: Item) => void }) => (
-    !items.length ? <p className='text-center'>No hay elementos todavía.</p> :
-        <div className='px-10 h-full flex gap-10 overflow-x-auto snap-x snap-mandatory pb-20'>
-            {items.map((item, index) => (
-                <Item
-                    key={index}
-                    {...item}
-                    addItemToList={addItemToList ? () => addItemToList(item) : undefined}
-                    toggleSeen={toggleSeen ? () => toggleSeen(item) : undefined}
-                    deleteFromList={deleteFromList ? () => deleteFromList(item) : undefined}
-                />
-            ))}
-        </div>
-);
 
 const App = () => {
     const [activeTab, setActiveTab] = useState<'movies' | 'series' | 'search' | 'popular'>('movies');
@@ -160,12 +73,47 @@ const App = () => {
     const [debouncedSearchValue, setDebouncedSearchValue] = useState('');
     const [searching, setSearching] = useState(false);
     const [seenFilter, setSeenFilter] = useState(false);
+    const [currentProviders, setCurrentProviders] = useState<{ logo: string; name: string }[]>([]);
+    const [itemToRemove, setItemToRemove] = useState<Item>();
 
     useEffect(() => {
+        getMovies();
+        getSeries();
 
+        _getPopularItems();
+    }, []);
+
+    useEffect(() => {
+        if (!searchValue) {
+            setSearching(false);
+            setSearchItems([]);
+        } else {
+            setSearching(true);
+        }
+        const delayInputTimeoutId = setTimeout(() => {
+            setDebouncedSearchValue(searchValue);
+        }, 600);
+
+        return () => clearTimeout(delayInputTimeoutId);
+    }, [searchValue]);
+
+    useEffect(() => {
+        _searchItem(debouncedSearchValue);
+
+    }, [debouncedSearchValue]);
+
+    useEffect(() => {
+        const _movies = seenFilter ? allMovies.seen : allMovies.notSeen;
+        setMovies(_movies);
+
+        const _series = seenFilter ? allSeries.seen : allSeries.notSeen;
+        setSeries(_series);
+
+    }, [seenFilter, allMovies, allSeries]);
+
+    const getMovies = () => {
         onValue(child(dbRef, 'movies'), (snapshot) => {
             if (snapshot.exists()) {
-                console.log(snapshot.val());
                 const _movies = (Object.values(snapshot.val()) as Item[]).sort((a, b) => a.title < b.title ? -1 : 1);
                 const allMovies = _movies.reduce((acc, item) => {
                     if (item.checked) {
@@ -192,12 +140,13 @@ const App = () => {
                 setAllMovies(allMovies);
             } else {
                 setAllMovies({ notSeen: [], seen: [] });
-                console.log('No data available');
             }
         });
+    };
+
+    const getSeries = () => {
         onValue(child(dbRef, 'series'), (snapshot) => {
             if (snapshot.exists()) {
-                console.log(snapshot.val());
                 const _series = (Object.values(snapshot.val()) as Item[]).sort((a, b) => a.title < b.title ? -1 : 1);
                 const allSeries = _series.reduce((acc, item) => {
                     if (item.checked) {
@@ -224,62 +173,32 @@ const App = () => {
                 setAllSeries(allSeries);
             } else {
                 setAllSeries({ notSeen: [], seen: [] });
-                console.log('No data available');
             }
-        });
-
-        getPopularItems();
-    }, []);
-
-    useEffect(() => {
-        if (!searchValue) {
-            setSearching(false);
-            setSearchItems([]);
-        } else {
-            setSearching(true);
-        }
-        const delayInputTimeoutId = setTimeout(() => {
-            setDebouncedSearchValue(searchValue);
-        }, 600);
-
-        return () => clearTimeout(delayInputTimeoutId);
-    }, [searchValue]);
-
-    useEffect(() => {
-        searchItem(debouncedSearchValue);
-
-    }, [debouncedSearchValue]);
-
-    useEffect(() => {
-        const _movies = seenFilter ? allMovies.seen : allMovies.notSeen;
-        setMovies(_movies);
-
-        const _series = seenFilter ? allSeries.seen : allSeries.notSeen;
-        setSeries(_series);
-
-    }, [seenFilter, allMovies, allSeries]);
-
-    const getPopularItems = () => {
-
-        const url = `https://api.themoviedb.org/3/trending/all/day?language=es-ES&api_key=${APIKEY}`;
-        fetch(url).then(response => response.json()).then(data => {
-            const _items = parseItemsFromApi(data.results);
-            setPopularItems(_items);
         });
     };
 
-    const searchItem = (search: string) => {
+    const _getPopularItems = async () => {
+        const _items = await getPopularItems();
+
+        setPopularItems(_items);
+    };
+
+    const _searchItem = async (search: string) => {
         if (!search) {
             return;
         }
 
-        const url = `https://api.themoviedb.org/3/search/multi?api_key=${APIKEY}&query=${search}&language=es-ES`;
-        fetch(url).then(response => response.json().then(data => {
-            const _items = parseItemsFromApi(data.results);
+        const _items = await searchItem(search) as Item[];
 
-            setSearchItems(_items);
-            setSearching(false);
-        }));
+        setSearchItems(_items);
+        setSearching(false);
+    };
+
+    const _getMovieProviders = async (item: Item) => {
+        const providers = await getMovieProviders(item);
+
+        (document.getElementById('providers-modal') as HTMLDialogElement).showModal?.();
+        setCurrentProviders(providers);
     };
 
     const handleClearSearch = () => {
@@ -293,120 +212,270 @@ const App = () => {
 
     const addItemToList = (item: Item) => {
         const db = getDatabase();
+        const canAddItem = checkCanAddItem(item);
+        const type = item.type === 'series' ? 'serie' : 'película';
+
+        if (!canAddItem) {
+            toast.error(`Esa ${type} ya está en tu lista.`);
+            // alert('Esa pelicula esta añadida ya');
+            return;
+        }
+
         set(ref(db, `${item.type}/${item.themoviedbId}`), {
             themoviedbId: item.themoviedbId,
             title: item.title,
             poster: item.poster,
             released: item.released,
-            checked: false
+            checked: false,
+            type: item.type
         });
+        toast.success(`<span class="font-bold underline">${item.title}</span> añadida a tu lista de ${type}s.`);
+    };
+
+    const checkCanAddItem = (item: Item) => {
+        const arrayToSearch = item.type === 'series' ? [...allMovies.notSeen, ...allSeries.seen] : [...allMovies.notSeen, ...allMovies.seen];
+        const itemFounded = arrayToSearch.find(movie => movie.themoviedbId === item.themoviedbId);
+
+        return !itemFounded;
     };
 
     const toggleSeen = (item: Item) => {
         const db = getDatabase();
+        const type = item.type === 'series' ? 'series' : 'películas';
         set(ref(db, `${activeTab}/${item.themoviedbId}/checked`), !item.checked);
+        const message = !item.checked ?
+            `se ha añadido a la lista de ${type} vistas.` :
+            `se ha eliminado de la lista de ${type} vistas.`;
+        toast.success(`<span class="font-bold underline">${item.title}</span> ${message}`);
+    };
+
+    const openModalToDeleteItem = (item: Item) => {
+        setItemToRemove(item);
+        (document.getElementById('remove-item-modal') as HTMLDialogElement).showModal?.();
     };
 
     const deleteFromList = (item: Item) => {
-        console.log(item);
         const db = getDatabase();
         remove(ref(db, `${activeTab}/${item.themoviedbId}`));
+        const type = item.type === 'series' ? 'series' : 'películas';
+        toast.success(`<span class="font-bold underline">${item.title}</span> se ha eliminado de la lista de ${type}.`);
+        (document.getElementById('remove-item-modal') as HTMLDialogElement).close?.();
+        setItemToRemove(undefined);
     };
 
     const handleActiveTab = (tab: Tab) => {
         setActiveTab(tab);
         handleClearSearch();
+        if (tab === 'search') {
+            setTimeout(() => {
+                (document.getElementById('search-input') as HTMLInputElement).focus();
+
+            }, 100);
+        }
     };
 
     return (
-        <div className='p-4 md:p-14 flex flex-col justify-stretch gap-10 h-full'>
-            <header className='flex w-full justify-between gap-5 items-center'>
-                <label className='w-full h-[48px] min-h-[48px] input input-bordered flex items-center gap-2 focus-within:outline-none'>
-                    <input type='text' className='grow' placeholder='Buscar' value={searchValue} onChange={({ target: { value } }) => setSearchValue(value)} />
-                    {!searchValue &&
-                        <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='currentColor' className='w-6 h-6 opacity-70'><path fillRule='evenodd' d='M9.965 11.026a5 5 0 1 1 1.06-1.06l2.755 2.754a.75.75 0 1 1-1.06 1.06l-2.755-2.754ZM10.5 7a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0Z' clipRule='evenodd' /></svg>
-                    }
-                    {!!searchValue && !searching &&
-                        <svg onClick={handleClearSearch} xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' strokeWidth={1.5} stroke='currentColor' className='w-6 h-6'>
-                            <path strokeLinecap='round' strokeLinejoin='round' d='M6 18 18 6M6 6l12 12' />
-                        </svg>
-                    }
-                    {!!searchValue && !!searching &&
-                    // <div className='flex justify-center items-center flex-1'>
-                            <span className='loading loading-spinner w-6 h-6'></span>
-                        // </div>
-                    }
-                </label>
+        <div className='drawer'>
+            <input id='my-drawer' type='checkbox' className='drawer-toggle' />
+            <div className='drawer-content'>
+                <div className='py-4 flex flex-col justify-stretch gap-4 md:gap-10 h-[100vh]'>
+                    <header className='px-4 flex w-full justify-between gap-5 items-center border-b-2 pb-2 border-slate-500'>
 
-                {activeTab !== 'popular' &&
-                    <label className='btn btn-circle swap max-h-[48px] h-[48px]'>
-                        {/* this hidden checkbox controls the state */}
-                        <input type='checkbox' onChange={toggleSeenFilter} checked={seenFilter} />
+                        <label htmlFor='my-drawer' className='drawer-button'>
+                            <svg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' strokeWidth={1.5} stroke='currentColor' className='w-6 h-6'>
+                                <path strokeLinecap='round' strokeLinejoin='round' d='M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5' />
+                            </svg>
 
-                        {/* OFF */}
-                        <svg className='swap-on w-5 h-w-5' xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' strokeWidth={1.5} stroke='currentColor'>
-                            <path strokeLinecap='round' strokeLinejoin='round' d='M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z' />
-                            <path strokeLinecap='round' strokeLinejoin='round' d='M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z' />
-                        </svg>
+                        </label>
+                        {activeTab === 'search' &&
+                            <label className='group w-full h-[60px] min-h-[60px] input border-2 border-base-content border-opacity-40 flex items-center gap-2 focus-within:outline-none focus:outline-none focus:border-base-content focus-within:border-base-content'>
+                                <input id='search-input' type='text' className='w-full text-lg text-base-content placeholder:text-base-content placeholder:text-opacity-90 font-bold placeholder:font-normal' placeholder='Busca películas o series' value={searchValue} onChange={({ target: { value } }) => setSearchValue(value)} />
+                                {!searchValue &&
+                                    <svg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' strokeWidth={1.5} stroke='currentColor' className={'w-6 h-6 group-focus-within:stroke-[3]'}>
+                                        <path strokeLinecap='round' strokeLinejoin='round' d='m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z' />
+                                    </svg> }
+                                {!!searchValue && !searching &&
+                                    <svg onClick={handleClearSearch} xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' strokeWidth={2.5} stroke='currentColor' className='w-6 h-6'>
+                                        <path strokeLinecap='round' strokeLinejoin='round' d='M6 18 18 6M6 6l12 12' />
+                                    </svg>
+                                }
+                                {!!searchValue && !!searching &&
+                                    <span className='loading loading-spinner w-6 h-6'></span>
+                                }
+                            </label>
+                        }
 
-                        {/* ON */}
-                        <svg className='swap-off w-5 h-w-5' xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' strokeWidth={1.5} stroke='currentColor'>
-                            <path strokeLinecap='round' strokeLinejoin='round' d='M3.98 8.223A10.477 10.477 0 0 0 1.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.451 10.451 0 0 1 12 4.5c4.756 0 8.773 3.162 10.065 7.498a10.522 10.522 0 0 1-4.293 5.774M6.228 6.228 3 3m3.228 3.228 3.65 3.65m7.894 7.894L21 21m-3.228-3.228-3.65-3.65m0 0a3 3 0 1 0-4.243-4.243m4.242 4.242L9.88 9.88' />
-                        </svg>
+                        {activeTab !== 'search' &&
+                            <div className='flex items-center w-full gap-1 h-[60px]'>
+                                {activeTab === 'popular' &&
+                                    <h1 className='text-lg w-full font-bold '>Series y películas populares</h1>
+                                }
+                                {['movies', 'series'].includes(activeTab) &&
+                                    <>
+                                        <h1 className='text-lg w-full font-bold'>{activeTab === 'series' ? 'Series' : 'Películas'} {seenFilter ? 'vistas' : 'pendientes de ver'}</h1>
+                                        <label className='btn btn-circle swap max-h-[48px] h-[48px]'>
+                                            {/* this hidden checkbox controls the state */}
+                                            <input type='checkbox' onChange={toggleSeenFilter} checked={seenFilter} />
 
-                    </label>
-                }
-            </header>
+                                            {/* OFF */}
+                                            <svg className='swap-on w-5 h-w-5' xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' strokeWidth={2.5} stroke='currentColor'>
+                                                <path strokeLinecap='round' strokeLinejoin='round' d='M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z' />
+                                                <path strokeLinecap='round' strokeLinejoin='round' d='M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z' />
+                                            </svg>
 
-            <main>
-                {!searchValue &&
+                                            {/* ON */}
+                                            <svg className='swap-off w-5 h-w-5' xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' strokeWidth={2.5} stroke='currentColor'>
+                                                <path strokeLinecap='round' strokeLinejoin='round' d='M3.98 8.223A10.477 10.477 0 0 0 1.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.451 10.451 0 0 1 12 4.5c4.756 0 8.773 3.162 10.065 7.498a10.522 10.522 0 0 1-4.293 5.774M6.228 6.228 3 3m3.228 3.228 3.65 3.65m7.894 7.894L21 21m-3.228-3.228-3.65-3.65m0 0a3 3 0 1 0-4.243-4.243m4.242 4.242L9.88 9.88' />
+                                            </svg>
+
+                                        </label>
+                                    </>
+                                }
+                            </div>
+                        }
+                    </header>
+
+                    <main className='flex-1'>
+                        {!searchValue &&
                     <>
                         {['movies', 'series'].includes(activeTab) &&
-                            <List items={activeTab === 'movies' ? movies : series} toggleSeen={toggleSeen} deleteFromList={deleteFromList} />
+                            <>
+                                <List
+                                    items={activeTab === 'movies' ? movies : series}
+                                    toggleSeen={toggleSeen}
+                                    deleteFromList={openModalToDeleteItem}
+                                    getProviders={_getMovieProviders}
+                                />
+                            </>
                         }
 
                         {activeTab === 'popular' &&
-                            <List items={popularItems} addItemToList={addItemToList} />
+                            <>
+                                <List
+                                    items={popularItems}
+                                    addItemToList={addItemToList}
+                                    getProviders={_getMovieProviders}
+                                />
+                            </>
                         }
                     </>
-                }
+                        }
 
-                {!!searchValue && !searching &&
+                        {!!searchValue && !searching &&
                     <>
                         {!!searchItems.length &&
-                            <List items={searchItems} addItemToList={addItemToList} />
+                            <List
+                                items={searchItems}
+                                addItemToList={addItemToList}
+                                getProviders={_getMovieProviders}
+                            />
                         }
                         {!searchItems.length &&
-                            <p className='text-center'>No hemos encontrado nada para "{searchValue}".</p>
+                            <p className='flex h-full justify-center items-center pb-[100px]'>No hemos encontrado nada para "{searchValue}".</p>
                         }
                     </>
-                }
-            </main>
-            <footer role='tablist' className='tabs tabs-bordered fixed bottom-0 left-0 bg-base-100 w-full py-2'>
-                {/* <a role='tab' className={`tab text-xl ${activeTab === 'search' ? 'tab-active' : ''}`} onClick={() => setActiveTab('search')}>Search</a> */}
-                {/* <a role='tab' className={`tab text-xl ${activeTab === 'movies' ? 'tab-active' : ''}`} onClick={() => setActiveTab('movies')}>Películas</a>
-                <a role='tab' className={`tab text-xl ${activeTab === 'series' ? 'tab-active' : ''}`} onClick={() => setActiveTab('series')}>Series</a>
-                <a role='tab' className={`tab text-xl ${activeTab === 'popular' ? 'tab-active' : ''}`} onClick={() => setActiveTab('popular')}>Popular</a> */}
+                        }
+                    </main>
 
-                <div className='btm-nav'>
-                    {(['movies', 'series', 'popular'] as Tab[]).map(tab => (
-                        <button className={`border-t-4 ${activeTab === tab ? 'text-secondary font-bold border-secondary' : 'border-transparent'}`} onClick={() => handleActiveTab(tab)}>
-                            {
-                                tab === 'movies' ? 'Películas' :
-                                    tab === 'series' ? 'Series' :
-                                        'Popular'
-                            }
-                        </button>
-                    ))}
-                    {/* <button className={`border-t-4 ${activeTab === 'series' ? 'text-secondary font-bold border-secondary' : 'border-transparent'}`} onClick={() => handleActiveTab('series')}>
-                        Series
-                    </button>
-                    <button className={`border-t-4 ${activeTab === 'popular' ? 'text-secondary font-bold border-secondary' : 'border-transparent'}`} onClick={() => handleActiveTab('popular')}>
-                        Popular
-                    </button> */}
+                    {/* <footer role='tablist' className='tabs tabs-bordered fixed bottom-0 left-0 bg-base-100 w-full py-2'>
+                        <div className='btm-nav'>
+                            {(['movies', 'series', 'popular', 'search'] as Tab[]).map(tab => (
+                                <button key={tab} className={`flex-1 ${tab === 'search' ? 'flex-grow-[0.5]' : ''} border-t-4 transition-all ${activeTab === tab ? 'text-lg font-bold' : 'border-transparent'}`} onClick={() => handleActiveTab(tab)}>
+                                    {
+                                        tab === 'movies' ? 'Películas' :
+                                            tab === 'series' ? 'Series' :
+                                                tab === 'popular' ? 'Popular' :
+                                                    <svg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' strokeWidth={activeTab === tab ? 3 : 1.5} stroke='currentColor' className={'w-6 h-6'}>
+                                                        <path strokeLinecap='round' strokeLinejoin='round' d='m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z' />
+                                                    </svg>
+
+                                    }
+                                </button>
+                            ))}
+                        </div>
+                    </footer> */}
+
+                    <dialog id='providers-modal' className='modal'>
+                        <div className='modal-box flex flex-col gap-2 max-w-[500px] w-4/5 pt-10'>
+                            <div className='flex flex-wrap gap-4 justify-center items-center'>
+                                {currentProviders?.map(provider => (
+                                    <div key={provider.name} className='flex flex-col w-[100px]'>
+                                        <img width='100' height='100' className='w-full h-[100px]' src={provider.logo} alt='' />
+                                        <p className='text-center pt-2 truncate w-full'>{provider.name}</p>
+                                    </div>
+                                ))}
+
+                                {!currentProviders.length &&
+                            <p className='pb-2'>No hay proveedores disponibles todavía.</p>
+                                }
+
+                            </div>
+                            <div className='modal-action m-0'>
+                                <form method='dialog'>
+                                    {/* if there is a button in form, it will close the modal */}
+                                    <button className='btn'>Cerrar</button>
+                                </form>
+                            </div>
+                        </div>
+                    </dialog>
+
+                    <dialog id='remove-item-modal' className='modal'>
+                        {!!itemToRemove &&
+                            <div className='modal-box flex flex-col gap-2 max-w-[500px] w-4/5 pt-10'>
+                                <div className='flex flex-wrap gap-4 justify-center items-center'>
+                                    <p>¿Estás seguro que quieres borrar <span className='font-bold underline'>{itemToRemove.title}</span> de tu lista de {itemToRemove.type === 'series' ? 'series' : 'películas'}?</p>
+                                </div>
+                                <div className='modal-action m-0 pt-4'>
+                                    <form method='dialog' className='flex justify-end gap-4' onSubmit={() => deleteFromList(itemToRemove)}>
+                                        {/* if there is a button in form, it will close the modal */}
+                                        <button type='button' onClick={() => (document.getElementById('remove-item-modal') as HTMLDialogElement)?.close()} className='btn'>Cancelar</button>
+                                        <button type='submit' className='btn btn-error'>Borrar</button>
+                                    </form>
+                                </div>
+                            </div>
+                        }
+                    </dialog>
                 </div>
-            </footer>
+            </div>
+            <div className='drawer-side'>
+                <label htmlFor='my-drawer' aria-label='close sidebar' className='drawer-overlay'></label>
+                <ul className='menu p-4 max-w-[70%] w-96 min-h-full bg-base-200 text-xl'>
+                    {(['movies', 'series', 'popular', 'search'] as Tab[]).map(tab => (
+                        <li key={tab}>
+                            <label htmlFor='my-drawer' onClick={() => handleActiveTab(tab)}>
+                                <a>
+                                    {
+                                        tab === 'movies' ? 'Películas' :
+                                            tab === 'series' ? 'Series' :
+                                                tab === 'popular' ? 'Popular' :
+                                                    <span className='flex items-center gap-2'>
+                                                    Buscar
+                                                        <svg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' strokeWidth={activeTab === tab ? 3 : 1.5} stroke='currentColor' className={'w-6 h-6'}>
+                                                            <path strokeLinecap='round' strokeLinejoin='round' d='m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z' />
+                                                        </svg>
+                                                    </span>
+
+                                    }
+                                </a>
+
+                            </label>
+                        </li>
+                        // <button key={tab} className={`flex-1 ${tab === 'search' ? 'flex-grow-[0.5]' : ''} border-t-4 transition-all ${activeTab === tab ? 'text-lg font-bold' : 'border-transparent'}`} onClick={() => handleActiveTab(tab)}>
+                        //     {
+                        //         tab === 'movies' ? 'Películas' :
+                        //             tab === 'series' ? 'Series' :
+                        //                 tab === 'popular' ? 'Popular' :
+                        //                     <svg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' strokeWidth={activeTab === tab ? 3 : 1.5} stroke='currentColor' className={'w-6 h-6'}>
+                        //                         <path strokeLinecap='round' strokeLinejoin='round' d='m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z' />
+                        //                     </svg>
+
+                        //     }
+                        // </button>
+                    ))}
+                </ul>
+            </div>
         </div>
+
     );
 };
 
