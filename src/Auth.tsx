@@ -46,6 +46,7 @@ const Auth = () => {
             document.querySelector('html')?.setAttribute('data-theme', localTheme);
         } else {
             const theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'custom';
+            document.querySelector('html')?.setAttribute('data-theme', theme);
             localStorage.setItem('theme', theme);
         }
     };
