@@ -1,10 +1,13 @@
 // Import the functions you need from the SDKs you need
 import { initializeApp } from 'firebase/app';
+import { getAuth, signOut } from 'firebase/auth';
 import { child, getDatabase, onValue, ref, remove, set } from 'firebase/database';
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import List from './components/list';
 import { getMovieProviders, getPopularItems, searchItem } from './services/themoviedb';
+import useStore from './store';
 
 // TODO: Add SDKs for Firebase products that you want to use
 // https://firebase.google.com/docs/web/setup#available-libraries
@@ -62,7 +65,7 @@ export interface Rating {
 }
 
 const App = () => {
-    const [currentTheme, setCurrentTheme] = useState<'dark' | 'custom'>('custom');
+    const [currentTheme, setCurrentTheme] = useState<'dark' | 'custom'>((localStorage.getItem('theme') as 'dark' | 'custom') || 'custom');
     const [activeTab, setActiveTab] = useState<'movies' | 'series' | 'search' | 'popular'>('movies');
     const [allMovies, setAllMovies] = useState<{seen: Item[]; notSeen: Item[]}>({ seen: [], notSeen: [] });
     const [movies, setMovies] = useState<Item[]>([]);
@@ -77,18 +80,14 @@ const App = () => {
     const [seenFilter, setSeenFilter] = useState(false);
     const [currentProviders, setCurrentProviders] = useState<{ logo: string; name: string }[]>([]);
     const [itemToRemove, setItemToRemove] = useState<Item>();
+    const userUid = useStore((state) => state?.uid);
+    const navigate = useNavigate();
 
     useEffect(() => {
-        getTheme();
         getMovies();
         getSeries();
         _getPopularItems();
     }, []);
-
-    const getTheme = () => {
-        const theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'custom';
-        setCurrentTheme(theme);
-    };
 
     useEffect(() => {
         document.querySelector('html')?.setAttribute('data-theme', currentTheme);
@@ -137,7 +136,7 @@ const App = () => {
     }, [searchActiveTabValue]);
 
     const getMovies = () => {
-        onValue(child(dbRef, 'movies'), (snapshot) => {
+        onValue(child(dbRef, `${userUid}/movies`), (snapshot) => {
             if (snapshot.exists()) {
                 const _movies = (Object.values(snapshot.val()) as Item[]).sort((a, b) => a.title < b.title ? -1 : 1);
                 const allMovies = _movies.reduce((acc, item) => {
@@ -170,7 +169,7 @@ const App = () => {
     };
 
     const getSeries = () => {
-        onValue(child(dbRef, 'series'), (snapshot) => {
+        onValue(child(dbRef, `${userUid}/series`), (snapshot) => {
             if (snapshot.exists()) {
                 const _series = (Object.values(snapshot.val()) as Item[]).sort((a, b) => a.title < b.title ? -1 : 1);
                 const allSeries = _series.reduce((acc, item) => {
@@ -246,7 +245,7 @@ const App = () => {
             return;
         }
 
-        set(ref(db, `${item.type}/${item.themoviedbId}`), {
+        set(ref(db, `${userUid}/${item.type}/${item.themoviedbId}`), {
             themoviedbId: item.themoviedbId,
             title: item.title,
             poster: item.poster,
@@ -267,7 +266,7 @@ const App = () => {
     const toggleSeen = (item: Item) => {
         const db = getDatabase();
         const type = item.type === 'series' ? 'series' : 'películas';
-        set(ref(db, `${activeTab}/${item.themoviedbId}/checked`), !item.checked);
+        set(ref(db, `${userUid}/${activeTab}/${item.themoviedbId}/checked`), !item.checked);
         const message = !item.checked ?
             `se ha añadido a la lista de ${type} vistas.` :
             `se ha eliminado de la lista de ${type} vistas.`;
@@ -281,7 +280,7 @@ const App = () => {
 
     const deleteFromList = (item: Item) => {
         const db = getDatabase();
-        remove(ref(db, `${activeTab}/${item.themoviedbId}`));
+        remove(ref(db, `${userUid}/${activeTab}/${item.themoviedbId}`));
         const type = item.type === 'series' ? 'series' : 'películas';
         toast.success(`<span class="font-bold underline">${item.title}</span> se ha eliminado de la lista de ${type}.`);
         (document.getElementById('remove-item-modal') as HTMLDialogElement).close?.();
@@ -303,6 +302,16 @@ const App = () => {
     const toggleTheme = () => {
         const newTheme = currentTheme === 'custom' ? 'dark' : 'custom';
         setCurrentTheme(newTheme);
+        localStorage.setItem('theme', newTheme);
+    };
+
+    const logout = () => {
+        const auth = getAuth();
+        signOut(auth).then(() => {
+            navigate('/login');
+        }).catch((error) => {
+            console.error(error);
+        });
     };
 
     return (
@@ -511,6 +520,9 @@ const App = () => {
                                 {/* moon icon */}
                                 <svg className='swap-off fill-current w-8 h-8' xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M21.64,13a1,1,0,0,0-1.05-.14,8.05,8.05,0,0,1-3.37.73A8.15,8.15,0,0,1,9.08,5.49a8.59,8.59,0,0,1,.25-2A1,1,0,0,0,8,2.36,10.14,10.14,0,1,0,22,14.05,1,1,0,0,0,21.64,13Zm-9.5,6.69A8.14,8.14,0,0,1,7.08,5.22v.27A10.15,10.15,0,0,0,17.22,15.63a9.79,9.79,0,0,0,2.1-.22A8.11,8.11,0,0,1,12.14,19.73Z'/></svg>
                             </label>
+                        </li>
+                        <li>
+                            <a onClick={logout}>Cerrar session</a>
                         </li>
                     </ul>
                 </div>

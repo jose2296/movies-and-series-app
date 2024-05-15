@@ -13,10 +13,16 @@
   "dependencies": {
     "dayjs": "^1.11.10",
     "firebase": "^10.10.0",
+    "localforage": "^1.10.0",
+    "match-sorter": "^6.3.4",
     "postcss-cli": "^11.0.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "sonner": "^1.4.41"
+    "react-hook-form": "^7.51.4",
+    "react-router-dom": "^6.23.1",
+    "sonner": "^1.4.41",
+    "sort-by": "^1.2.0",
+    "zustand": "^4.5.2"
   },
   "devDependencies": {
     "@types/react": "^18.2.66",
